@@ -1,0 +1,11 @@
+# 敏感数据与运行时产物
+deploy/data/
+deploy/clients/
+deploy/.env
+deploy/config/auth/passwd
+
+# IDE
+.idea/
+
+# macOS
+.DS_Store

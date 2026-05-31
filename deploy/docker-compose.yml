@@ -1,0 +1,13 @@
+services:
+  openvpn:
+    image: lisenet/openvpn:latest
+    container_name: openvpn-server
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - ./data/openvpn:/etc/openvpn
+      - ./config/auth:/etc/openvpn/auth:ro
+    environment:
+      - OVPN_SERVER=${OVPN_SERVER}
+    restart: unless-stopped
