@@ -9,6 +9,9 @@ cd "${DEPLOY_DIR}"
 echo "==> 已注册账户（passwd）:"
 if [ -f config/auth/passwd ] && [ -s config/auth/passwd ]; then
 	awk -F: '{print "  - " $1}' config/auth/passwd
+	count=$(wc -l < config/auth/passwd | tr -d ' ')
+	echo ""
+	echo "  共 ${count} 个账户"
 else
 	echo "  （无）"
 fi

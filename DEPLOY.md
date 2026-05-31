@@ -16,7 +16,7 @@
 
 1. **客户端证书**：每个账户拥有独立的客户端证书（CN = 用户名）
 2. **用户名 + 密码**：连接时需输入与证书 CN 一致的用户名及对应密码
-3. **证书吊销**：可通过脚本吊销账户，立即失效
+3. **账户生命周期**：支持创建、查看、改密、删除；删除时吊销证书并更新 CRL，旧 `.ovpn` 立即失效
 
 ## 前置要求
 
@@ -40,10 +40,12 @@ open-vpn-server/
     │       ├── check-user.sh # 账密验证脚本（容器内调用）
     │       └── passwd        # 账户密码哈希（运行时生成，勿提交 Git）
     ├── scripts/
-    │   ├── init-server.sh    # 初始化服务端
-    │   ├── add-user.sh       # 创建账户并生成 .ovpn
-    │   ├── revoke-user.sh    # 吊销账户
-    │   └── list-users.sh     # 列出账户
+    │   ├── init-server.sh       # 初始化服务端
+    │   ├── add-user.sh          # 创建账户并生成 .ovpn
+    │   ├── list-users.sh        # 查看已有账户
+    │   ├── change-password.sh   # 修改账户密码
+    │   ├── delete-user.sh       # 删除账户（带确认）
+    │   └── revoke-user.sh       # 吊销证书（delete-user 内部调用）
     ├── data/                 # PKI 与服务端配置（运行时生成）
     └── clients/              # 客户端 .ovpn 文件（运行时生成）
 ```
@@ -166,22 +168,31 @@ docker compose restart openvpn
 docker compose down
 ```
 
-## 六、创建 VPN 账户
+## 六、VPN 账户管理
 
-### 交互式创建（推荐）
+| 操作 | 命令 |
+|------|------|
+| 创建账户 | `./scripts/add-user.sh <用户名> [密码]` |
+| 查看已有账户 | `./scripts/list-users.sh` |
+| 修改密码 | `./scripts/change-password.sh <用户名> [新密码]` |
+| 删除账户 | `./scripts/delete-user.sh <用户名>` |
+
+### 创建账户
+
+**交互式创建（推荐）：**
 
 ```bash
 ./scripts/add-user.sh alice
 # 按提示输入密码（不回显）
 ```
 
-### 命令行指定密码
+**命令行指定密码：**
 
 ```bash
 ./scripts/add-user.sh alice 'YourSecurePassword123'
 ```
 
-### 脚本做了什么
+创建时会：
 
 1. 以 `alice` 为 CN 签发客户端证书
 2. 将 `alice` 的密码 SHA256 哈希写入 `config/auth/passwd`
@@ -193,13 +204,45 @@ docker compose down
 ./scripts/list-users.sh
 ```
 
-### 吊销账户
+输出包含三部分：
+
+- **已注册账户**：`config/auth/passwd` 中的用户名列表
+- **已签发证书**：PKI 中有效的客户端证书
+- **本地 .ovpn 文件**：`deploy/clients/` 下可下载的配置
+
+### 修改账户密码
+
+```bash
+# 交互式输入新密码
+./scripts/change-password.sh alice
+
+# 命令行指定新密码
+./scripts/change-password.sh alice 'NewPassword456'
+```
+
+说明：
+
+- 仅更新服务端密码哈希，**无需重新生成或下发 .ovpn**
+- 用户连接时使用新密码即可；旧密码立即失效
+
+### 删除指定账户
+
+```bash
+./scripts/delete-user.sh alice
+# 按提示输入 y 确认
+```
+
+删除时会：
+
+1. 吊销该用户的客户端证书并更新 CRL（旧 `.ovpn` 立即无法连接）
+2. 从 `config/auth/passwd` 移除账户
+3. 删除本地 `clients/alice.ovpn`
+
+如需跳过确认（脚本/automation 场景），可直接调用底层脚本：
 
 ```bash
 ./scripts/revoke-user.sh alice
 ```
-
-吊销后该用户的证书进入 CRL，旧 `.ovpn` 立即无法连接。
 
 ## 七、客户端导入与连接
 
@@ -327,7 +370,7 @@ sudo iptables -t nat -A POSTROUTING -s 192.168.255.0/24 -o eth0 -j MASQUERADE
 ## 十二、安全建议
 
 1. **强密码**：账户密码建议 16 位以上，含大小写字母、数字和符号
-2. **最小权限**：仅给需要的人员创建账户，离职立即 `revoke-user.sh`
+2. **最小权限**：仅给需要的人员创建账户，离职立即 `./scripts/delete-user.sh`
 3. **勿泄露 .ovpn**：配置文件内含私钥，等同于账户凭证
 4. **定期备份** `data/openvpn`，并离线保存 CA 私钥
 5. **限制 SSH**：云服务器仅允许密钥登录，禁用密码登录
@@ -346,11 +389,14 @@ cp .env.example .env && vim .env
 # 创建账户
 ./scripts/add-user.sh alice
 
-# 列出账户
+# 查看已有账户
 ./scripts/list-users.sh
 
-# 吊销账户
-./scripts/revoke-user.sh alice
+# 修改密码
+./scripts/change-password.sh alice
+
+# 删除账户
+./scripts/delete-user.sh alice
 
 # 查看服务日志
 docker compose logs -f openvpn
