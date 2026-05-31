@@ -31,14 +31,13 @@ chmod +x config/auth/check-user.sh
 
 echo "==> 生成 OpenVPN 服务端配置..."
 docker compose run --rm openvpn ovpn_genconfig \
-	-u "udp${OVPN_PORT}" \
+	-u "udp://${OVPN_SERVER}:${OVPN_PORT}" \
 	-s "${OVPN_SUBNET}/24" \
-	-e "push \"redirect-gateway def1 bypass-dhcp\"" \
-	-e "push \"dhcp-option DNS 8.8.8.8\"" \
-	-e "push \"dhcp-option DNS 1.1.1.1\""
+	-e "push \"redirect-gateway def1 bypass-dhcp\""
 
 echo "==> 初始化 PKI（CA 与服务器证书）..."
-docker compose run --rm \
+docker compose run --rm -T \
+	-e EASYRSA_BATCH=1 \
 	-e EASYRSA_REQ_CN="${OVPN_CN}" \
 	openvpn ovpn_initpki nopass
 

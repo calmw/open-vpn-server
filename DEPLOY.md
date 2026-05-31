@@ -133,6 +133,14 @@ chmod +x scripts/*.sh config/auth/check-user.sh
 3. 启用 **证书 + 用户名密码** 双重验证
 4. 启动 Docker 容器
 
+> **若上次初始化中途失败**，需先清理不完整数据再重跑：
+> ```bash
+> rm -rf data/openvpn/*
+> ./scripts/init-server.sh
+> ```
+>
+> PKI 初始化阶段**无需手动输入**任何内容；若出现 `Common Name [OpenVPN-CA]:` 提示，说明脚本版本过旧，请更新后重试。
+
 初始化成功后输出类似：
 
 ```
