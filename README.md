@@ -35,6 +35,8 @@ scp root@<公网IP>:/path/to/deploy/clients/alice.ovpn ./
 | 查看账户 | `./scripts/list-users.sh` |
 | 删除账户 | `./scripts/delete-user.sh <用户名>` |
 
+> **多设备**：每台设备应使用独立账户（如 `alice-mac`、`alice-android`），同一 `.ovpn` 不能多设备同时在线。详见 [DEPLOY.md](./DEPLOY.md#多设备使用重要)。
+
 ## 目录结构
 
 ```

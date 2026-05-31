@@ -20,6 +20,7 @@
 |------|------|
 | 账户标识 | 每个用户拥有独立客户端证书（CN = 用户名） |
 | 凭证形式 | `.ovpn` 文件内含私钥，**等同于账户凭证**，须妥善保管 |
+| 并发限制 | **同一证书同时只能有一个在线会话**（默认未启用 `duplicate-cn`） |
 | 吊销机制 | 删除账户时吊销证书并更新 CRL，旧 `.ovpn` 立即失效 |
 
 > 兼容 OpenVPN Connect / iOS / Android 官方客户端，连接时无需输入用户名密码。
@@ -221,6 +222,20 @@ docker compose down
 scp root@<公网IP>:/data/openvpn/open-vpn-server/deploy/clients/alice.ovpn ./
 ```
 
+### 多设备使用（重要）
+
+**一个 `.ovpn` 对应一个在线会话。** 若在 Mac、Android、iPad 等多台设备上导入**同一份**配置并同时连接，后连上的设备会把先连上的踢下线；被踢的设备会自动重连，又会踢掉另一台，表现为**客户端间断性重连**。
+
+**推荐做法：每台设备单独建账户。**
+
+```bash
+./scripts/add-user.sh alice-mac
+./scripts/add-user.sh alice-android
+./scripts/add-user.sh alice-ipad
+```
+
+各设备导入各自的 `.ovpn`，互不影响。若只需单设备使用，确保其他设备已断开或删除旧配置即可。
+
 ---
 
 ## 七、客户端导入与连接
@@ -303,6 +318,11 @@ sudo netfilter-persistent save
   ├─ 服务端无日志 → 安全组/端口/remote 地址错误
   ├─ TLS Error: Auth Username/Password was not provided → 旧版账密配置残留（见下方）
   └─ Connected 但无法上网 → IP 转发 / NAT（见第八节）
+
+Connected 后间断性重连
+  ├─ 日志含 previous active sessions ... will be dropped → 多设备共用同一 .ovpn（见下方）
+  ├─ SIGUSR1[soft,ping-restart] → 网络丢包 / UDP 超时（见下方）
+  └─ 约每小时一次、几乎无感 → TLS 重协商，通常可忽略
 ```
 
 ### 常见问题
@@ -312,7 +332,45 @@ sudo netfilter-persistent save
 | 客户端 Timeout，服务端无日志 | 检查云安全组 **UDP 1194**；`nc -vzu <IP> 1194` |
 | TLS Error: Auth Username/Password was not provided | 旧版初始化残留账密验证，见下方 |
 | Connected 但无法上网 | 配置 NAT（第八节） |
+| Connected 后间断性重连 | 多设备共用同一 `.ovpn`，或移动网络 UDP 不稳定，见下方 |
 | 证书错误 | 重新 `./scripts/add-user.sh` 生成 .ovpn |
+
+### 多设备共用同一 `.ovpn` 导致间断性重连
+
+**现象：** 客户端显示 Connected → Reconnecting → Connected，多台设备（如 Mac + Android）交替掉线。
+
+**服务端日志特征：**
+
+```
+MULTI: new connection by client 'alice' will cause previous active sessions by this client to be dropped.
+Remember to use the --duplicate-cn option if you want multiple clients using the same certificate ...
+```
+
+同一用户名（证书 CN）的新连接会**踢掉**该用户已有的在线会话。被踢设备上的 OpenVPN Connect 会自动重连，形成两台设备互相抢占，看起来像网络不稳定。
+
+**处理（推荐）：** 为每台设备单独创建账户（见第六节「多设备使用」）：
+
+```bash
+./scripts/add-user.sh alice-mac
+./scripts/add-user.sh alice-android
+```
+
+**不推荐：** 在 `openvpn.conf` 中添加 `duplicate-cn` 允许多设备共用同一证书——无法按设备区分会话，吊销粒度变粗，仅适合个人临时测试。
+
+### 单设备仍频繁重连（ping-restart）
+
+若**只有一台设备**在线，日志出现 `SIGUSR1[soft,ping-restart]`，多为移动网络 UDP 丢包或 NAT 超时。可放宽 keepalive 并限制 MTU：
+
+```bash
+# 编辑 data/openvpn/openvpn.conf，将 keepalive 10 60 改为：
+keepalive 10 120
+mssfix 1400
+
+docker compose restart openvpn
+
+# 重新生成客户端配置并重新导入
+docker compose run --rm openvpn ovpn_getclient <用户名> > clients/<用户名>.ovpn
+```
 
 ### 旧版账密配置残留
 
@@ -380,10 +438,11 @@ tar czvf openvpn-backup-$(date +%Y%m%d).tar.gz data/openvpn
 ## 十二、安全建议
 
 1. **`.ovpn` 即账户凭证**：内含私钥，勿通过不安全渠道传输或提交到 Git
-2. **最小权限**：按需创建账户，离职立即 `./scripts/delete-user.sh`
-3. **定期备份** `data/openvpn/`，CA 私钥离线保存
-4. **SSH 安全**：仅允许密钥登录，禁用密码登录
-5. **安全组**：生产环境可将 UDP 1194 来源限制为可信 IP 段
+2. **一机一账户**：Mac、手机、平板各用独立 `.ovpn`，避免多设备互踢（见第六节、第九节）
+3. **最小权限**：按需创建账户，离职立即 `./scripts/delete-user.sh`
+4. **定期备份** `data/openvpn/`，CA 私钥离线保存
+5. **SSH 安全**：仅允许密钥登录，禁用密码登录
+6. **安全组**：生产环境可将 UDP 1194 来源限制为可信 IP 段
 
 ---
 
