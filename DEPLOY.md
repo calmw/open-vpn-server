@@ -385,6 +385,12 @@ TLS Error: Auth Username/Password was not provided by peer
 cd deploy
 chmod +x scripts/fix-openvpn-connect.sh
 ./scripts/fix-openvpn-connect.sh
+
+# 确认服务端已无账密验证（应无输出）
+grep auth-user-pass data/openvpn/openvpn.conf
+
+# 确认客户端配置无 auth-user-pass（应无输出）
+grep auth-user-pass clients/cisco.ovpn
 ```
 
 然后：

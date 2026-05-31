@@ -17,9 +17,14 @@ fi
 CONF_FILE="${DEPLOY_DIR}/data/openvpn/openvpn.conf"
 
 echo "==> 移除服务端账密验证（保留客户端证书验证）..."
-grep -v -E '^(script-security 3|auth-user-pass-verify|username-as-common-name)$' \
+grep -v -E '^(# 账户权限验证|script-security 3|auth-user-pass-verify|username-as-common-name)' \
 	"${CONF_FILE}" > "${CONF_FILE}.tmp"
 mv "${CONF_FILE}.tmp" "${CONF_FILE}"
+
+if grep -q 'auth-user-pass-verify' "${CONF_FILE}"; then
+	echo "错误: openvpn.conf 仍含 auth-user-pass-verify，请手动检查 ${CONF_FILE}"
+	exit 1
+fi
 
 if ! grep -q "^verify-client-cert require" "${CONF_FILE}"; then
 	echo "verify-client-cert require" >> "${CONF_FILE}"
@@ -47,6 +52,8 @@ if [ -d data/openvpn/pki/issued ]; then
 		fi
 		echo "  - ${username}"
 		docker compose run --rm openvpn ovpn_getclient "${username}" > "clients/${username}.ovpn"
+		grep -v -E '^(auth-user-pass|auth-nocache)' "clients/${username}.ovpn" > "clients/${username}.ovpn.tmp"
+		mv "clients/${username}.ovpn.tmp" "clients/${username}.ovpn"
 	done
 fi
 
