@@ -35,9 +35,7 @@ docker compose run --rm openvpn ovpn_genconfig \
 	-s "${OVPN_SUBNET}/24" \
 	-e "push \"redirect-gateway def1 bypass-dhcp\"" \
 	-e "push \"dhcp-option DNS 8.8.8.8\"" \
-	-e "push \"dhcp-option DNS 1.1.1.1\"" \
-	-d \
-	-D
+	-e "push \"dhcp-option DNS 1.1.1.1\""
 
 echo "==> 初始化 PKI（CA 与服务器证书）..."
 docker compose run --rm \
