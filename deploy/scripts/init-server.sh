@@ -23,6 +23,7 @@ fi
 OVPN_PORT="${OVPN_PORT:-1194}"
 OVPN_SUBNET="${OVPN_SUBNET:-192.168.255.0}"
 OVPN_CN="${OVPN_CN:-OpenVPN-CA}"
+OVPN_PASSWORD_AUTH="${OVPN_PASSWORD_AUTH:-0}"
 
 mkdir -p data/openvpn config/auth clients
 touch config/auth/passwd
@@ -41,18 +42,29 @@ docker compose run --rm -T \
 	-e EASYRSA_REQ_CN="${OVPN_CN}" \
 	openvpn ovpn_initpki nopass
 
-echo "==> 启用用户名/密码 + 客户端证书双重验证..."
+echo "==> 配置客户端证书验证..."
 CONF_FILE="${DEPLOY_DIR}/data/openvpn/openvpn.conf"
-if ! grep -q "auth-user-pass-verify" "${CONF_FILE}"; then
+if ! grep -q "verify-client-cert require" "${CONF_FILE}"; then
 	cat >> "${CONF_FILE}" <<'EOF'
 
-# 账户权限验证：证书 CN 须与登录用户名一致，且密码正确
-script-security 3
-auth-user-pass-verify /etc/openvpn/auth/check-user.sh via-env
-username-as-common-name
+# 账户权限验证：每用户独立客户端证书（CN = 用户名）
 verify-client-cert require
 crl-verify /etc/openvpn/crl.pem
 EOF
+fi
+
+if [ "${OVPN_PASSWORD_AUTH}" = "1" ]; then
+	echo "==> 启用额外账密验证（OpenVPN Connect 可能不兼容，建议用 Tunnelblick/CLI）..."
+	if ! grep -q "auth-user-pass-verify" "${CONF_FILE}"; then
+		cat >> "${CONF_FILE}" <<'EOF'
+
+script-security 3
+auth-user-pass-verify /etc/openvpn/auth/check-user.sh via-env
+username-as-common-name
+EOF
+	fi
+else
+	echo "==> 认证模式: 仅客户端证书（兼容 OpenVPN Connect 3.x）"
 fi
 
 docker compose run --rm openvpn easyrsa gen-crl

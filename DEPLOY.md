@@ -7,15 +7,15 @@
 ```
 ┌─────────────────┐         UDP 1194          ┌──────────────────────┐
 │  VPN 客户端      │ ◄──────────────────────► │  云服务器             │
-│  (.ovpn 导入)   │    TLS + 证书 + 账密       │  docker-compose      │
+│  (.ovpn 导入)   │    TLS + 独立客户端证书      │  docker-compose      │
 └─────────────────┘                           │  openvpn-server      │
                                               └──────────────────────┘
 ```
 
-**安全模型（双重验证）：**
+**安全模型（默认：仅客户端证书）：**
 
-1. **客户端证书**：每个账户拥有独立的客户端证书（CN = 用户名）
-2. **用户名 + 密码**：连接时需输入与证书 CN 一致的用户名及对应密码
+1. **客户端证书**：每个账户拥有独立的客户端证书（CN = 用户名），`.ovpn` 内含私钥，等同于账户凭证
+2. **可选账密**（`.env` 中 `OVPN_PASSWORD_AUTH=1`）：额外要求用户名+密码，但 **OpenVPN Connect 3.x 不支持**，需用 Tunnelblick 或 CLI
 3. **账户生命周期**：支持创建、查看、改密、删除；删除时吊销证书并更新 CRL，旧 `.ovpn` 立即失效
 
 ## 前置要求
@@ -44,7 +44,8 @@ open-vpn-server/
     │   ├── add-user.sh          # 创建账户并生成 .ovpn
     │   ├── list-users.sh        # 查看已有账户
     │   ├── change-password.sh   # 修改账户密码
-    │   ├── delete-user.sh       # 删除账户（带确认）
+    │   ├── delete-user.sh         # 删除账户（带确认）
+    │   ├── fix-openvpn-connect.sh # 修复 Connect 3.x 连接失败
     │   └── revoke-user.sh       # 吊销证书（delete-user 内部调用）
     ├── data/                 # PKI 与服务端配置（运行时生成）
     └── clients/              # 客户端 .ovpn 文件（运行时生成）
@@ -341,8 +342,9 @@ tar czvf openvpn-backup-$(date +%Y%m%d).tar.gz data/openvpn config/auth/passwd
 
 | 现象 | 可能原因 | 处理 |
 |------|----------|------|
-| 客户端一直连接中 | 安全组未放行 UDP 1194 | 检查云厂商安全组与 ufw |
-| AUTH_FAILED | 用户名/密码错误或用户名与证书 CN 不一致 | 确认凭据；重新 `./scripts/add-user.sh` |
+| 客户端一直连接中 / 超时 | 安全组未放行 UDP 1194 | 检查云厂商安全组与 ufw |
+| TLS Error: Auth Username/Password was not provided | OpenVPN Connect 3.x 与账密验证冲突 | 运行 `./scripts/fix-openvpn-connect.sh` 后重新导入 .ovpn |
+| AUTH_FAILED | 启用了 `OVPN_PASSWORD_AUTH=1` 且账密错误 | 确认凭据；或改用仅证书模式 |
 | TLS 握手失败 | `OVPN_SERVER` 填写错误 | 检查 `.env` 并重新生成客户端配置 |
 | 能连上但无法上网 | 未开启 IP 转发或 NAT | 见下方「启用 IP 转发」 |
 | 容器启动失败 | 端口被占用 | `ss -ulnp \| grep 1194` 检查 |
@@ -366,6 +368,32 @@ sudo iptables -t nat -A POSTROUTING -s 192.168.255.0/24 -o eth0 -j MASQUERADE
 若使用 `ufw`，还需在 `/etc/ufw/before.rules` 中添加 NAT 规则，或使用 `iptables-persistent` 保存规则。
 
 > **提示**：部分云镜像默认已开启 `ip_forward`；若客户端能获取 VPN IP 但无法访问外网，优先检查 NAT 规则。
+
+### OpenVPN Connect 3.x 连接失败（TLS 账密错误）
+
+若服务端日志出现：
+
+```
+TLS Error: Auth Username/Password was not provided by peer
+```
+
+说明 **OpenVPN Connect 3.x（macOS/iOS/Windows）在 TLS 阶段不会提交用户名密码**，与 `auth-user-pass-verify` 不兼容。客户端会显示超时，但服务端已有日志。
+
+**一键修复（推荐）：**
+
+```bash
+cd deploy
+chmod +x scripts/fix-openvpn-connect.sh
+./scripts/fix-openvpn-connect.sh
+```
+
+然后：
+
+1. 在 OpenVPN Connect 中**删除旧配置**
+2. 重新导入 `clients/<用户名>.ovpn`
+3. 直接连接，**无需输入用户名和密码**
+
+修复后认证方式为「仅客户端证书」，安全性仍由每用户独立证书保障。
 
 ## 十二、安全建议
 
