@@ -6,20 +6,29 @@ DEPLOY_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 cd "${DEPLOY_DIR}"
 
-echo "==> 已注册账户（passwd）:"
-if [ -f config/auth/passwd ] && [ -s config/auth/passwd ]; then
-	awk -F: '{print "  - " $1}' config/auth/passwd
-	count=$(wc -l < config/auth/passwd | tr -d ' ')
-	echo ""
-	echo "  共 ${count} 个账户"
-else
-	echo "  （无）"
-fi
-
-echo ""
 echo "==> 已签发的客户端证书:"
 if [ -d data/openvpn/pki/issued ]; then
-	ls -1 data/openvpn/pki/issued/*.crt 2>/dev/null | xargs -n1 basename | sed 's/\.crt$//' | grep -v '^server$' | grep -v '^ca$' | sed 's/^/  - /' || echo "  （无）"
+	count=0
+	for cert in data/openvpn/pki/issued/*.crt; do
+		[ -f "${cert}" ] || continue
+		username=$(basename "${cert}" .crt)
+		case "${username}" in
+			ca | server | OpenVPN-CA) continue ;;
+		esac
+		if [ -f .env ]; then
+			# shellcheck disable=SC1091
+			source .env
+			[ "${username}" = "${OVPN_SERVER:-}" ] && continue
+		fi
+		echo "  - ${username}"
+		count=$((count + 1))
+	done
+	if [ "${count}" -eq 0 ]; then
+		echo "  （无）"
+	else
+		echo ""
+		echo "  共 ${count} 个账户"
+	fi
 else
 	echo "  （服务端尚未初始化）"
 fi

@@ -2,7 +2,6 @@
 deploy/data/
 deploy/clients/
 deploy/.env
-deploy/config/auth/passwd
 
 # IDE
 .idea/
